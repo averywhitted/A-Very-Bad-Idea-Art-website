@@ -1,0 +1,1600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>A Very Bad Idea — 3D & Design</title>
+  <meta name="description" content="A Very Bad Idea — 3D artist and graphic designer. Blender renders, visual identities, motion, and anything else that shouldn't exist.">
+
+  <!-- Open Graph -->
+  <meta property="og:title"       content="A Very Bad Idea — 3D & Design">
+  <meta property="og:description" content="3D artist and graphic designer. Blender renders, visual identities, motion, and anything else that shouldn't exist.">
+  <meta property="og:type"        content="website">
+  <meta property="og:image"       content="reel-poster.jpg">
+  <meta name="twitter:card"       content="summary_large_image">
+
+  <!-- Favicon — inline SVG -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%2308080a'/><text x='2' y='22' font-family='monospace' font-size='11' font-weight='700' fill='%233dffaa'>[ABI]</text></svg>">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+
+  <style>
+    /* ════════════════════════════════════════════
+       TOKENS
+    ════════════════════════════════════════════ */
+    :root {
+      --bg:           #08080a;
+      --surface:      #0f0f12;
+      --surface-2:    #161619;
+      --border:       #222228;
+      --border-soft:  #1a1a1f;
+      --text:         #b8b8c4;
+      --text-dim:     #7c7c8a;
+      --text-bright:  #e4e4f0;
+      --accent:       #3dffaa;
+      --accent-dim:   rgba(61, 255, 170, 0.10);
+      --accent-glow:  0 0 24px rgba(61, 255, 170, 0.25);
+      --font: 'JetBrains Mono', ui-monospace, 'Cascadia Code', monospace;
+    }
+
+    /* ════════════════════════════════════════════
+       RESET & BASE
+    ════════════════════════════════════════════ */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+      cursor: none;
+    }
+    a, button, [role="button"], input, textarea { cursor: none; }
+    ::selection { background: rgba(61, 255, 170, 0.2); color: var(--text-bright); }
+
+    /* ════════════════════════════════════════════
+       CUSTOM CURSOR — dot (instant) + ring (lerped)
+       Two separate elements. Dot tracks mouse directly
+       each frame — no lag. Ring lerps toward mouse
+       position in a rAF loop, giving it just enough
+       weight to feel physical without drifting far.
+       Hover scales the ring up; dot stays put.
+    ════════════════════════════════════════════ */
+    .cursor-dot {
+      position: fixed;
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: var(--accent);
+      pointer-events: none;
+      z-index: 9999;
+      transform: translate(-50%, -50%);
+      will-change: left, top;
+    }
+    .cursor-ring {
+      position: fixed;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 1px solid var(--accent);
+      pointer-events: none;
+      z-index: 9998;
+      transform: translate(-50%, -50%);
+      opacity: 0.65;
+      /* Only scale/opacity get transitions — position is driven by rAF lerp */
+      transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+                  opacity   0.22s ease;
+      will-change: left, top;
+    }
+    body.cursor-hover .cursor-ring {
+      transform: translate(-50%, -50%) scale(1.65);
+      opacity: 1;
+    }
+    /* Hide both on touch devices */
+    @media (hover: none) {
+      .cursor-dot, .cursor-ring { display: none; }
+      body, a, button, [role="button"], input, textarea { cursor: auto; }
+    }
+
+    /* ════════════════════════════════════════════
+       NAV
+    ════════════════════════════════════════════ */
+    .nav {
+      position: fixed;
+      right: 1.75rem;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 900;
+    }
+    .nav-track {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 18px;
+      padding: 20px 0;
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      cursor: none;
+    }
+    .nav-label {
+      font-size: 10px;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      opacity: 0;
+      transform: translateX(10px);
+      transition: opacity 0.25s ease, transform 0.25s ease, color 0.2s ease;
+      pointer-events: none;
+      white-space: nowrap;
+      user-select: none;
+    }
+    .nav-pip {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--border);
+      border: 1px solid var(--border);
+      flex-shrink: 0;
+      transition: background 0.25s ease, box-shadow 0.25s ease, transform 0.2s ease;
+    }
+    .nav-pip.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      box-shadow: var(--accent-glow);
+    }
+    /* hover expand */
+    .nav-track:hover .nav-label      { opacity: 1; transform: translateX(0); }
+    .nav-track:hover .nav-pip        { background: #444; border-color: #555; }
+    .nav-track:hover .nav-pip.active { background: var(--accent); border-color: var(--accent); }
+    .nav-item:hover .nav-label       { color: var(--text-bright); }
+    .nav-item:hover .nav-pip         { transform: scale(1.6); }
+
+    /* stagger in top→bottom, out bottom→top */
+    .nav-item:nth-child(1) .nav-label { transition-delay: 140ms; }
+    .nav-item:nth-child(2) .nav-label { transition-delay: 105ms; }
+    .nav-item:nth-child(3) .nav-label { transition-delay:  70ms; }
+    .nav-item:nth-child(4) .nav-label { transition-delay:  35ms; }
+    .nav-item:nth-child(5) .nav-label { transition-delay:   0ms; }
+    .nav-track:hover .nav-item:nth-child(1) .nav-label { transition-delay:   0ms; }
+    .nav-track:hover .nav-item:nth-child(2) .nav-label { transition-delay:  35ms; }
+    .nav-track:hover .nav-item:nth-child(3) .nav-label { transition-delay:  70ms; }
+    .nav-track:hover .nav-item:nth-child(4) .nav-label { transition-delay: 105ms; }
+    .nav-track:hover .nav-item:nth-child(5) .nav-label { transition-delay: 140ms; }
+
+    /* ════════════════════════════════════════════
+       HERO
+    ════════════════════════════════════════════ */
+    #hero {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      min-height: 600px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+    }
+    .hero-bg {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse at 65% 45%, rgba(22, 12, 60, 0.9) 0%, transparent 55%),
+        radial-gradient(ellipse at 20% 75%, rgba(0, 55, 45, 0.5) 0%, transparent 45%),
+        radial-gradient(ellipse at 85% 15%, rgba(45, 8, 60, 0.4) 0%, transparent 40%),
+        #08080a;
+      animation: heroFloat 12s ease-in-out infinite alternate;
+    }
+    @keyframes heroFloat {
+      0%   { filter: hue-rotate(0deg)   brightness(1);    }
+      50%  { filter: hue-rotate(18deg)  brightness(1.04); }
+      100% { filter: hue-rotate(-10deg) brightness(0.97); }
+    }
+    .hero-bg::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px);
+      background-size: 28px 28px;
+      mask-image: radial-gradient(ellipse at 50% 50%, black 30%, transparent 80%);
+    }
+    .hero-bg::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg, transparent, transparent 3px,
+        rgba(0,0,0,0.04) 3px, rgba(0,0,0,0.04) 4px
+      );
+      pointer-events: none;
+    }
+    .hero-video {
+      position: absolute;
+      inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      opacity: 0;
+      transition: opacity 1.2s ease;
+    }
+    .hero-video.loaded { opacity: 0.82; }
+    .hero-veil {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        100deg,
+        rgba(8,8,10,0.85) 0%,
+        rgba(8,8,10,0.55) 45%,
+        rgba(8,8,10,0.1)  70%,
+        transparent 100%
+      );
+    }
+    .hero-veil-bottom {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 160px;
+      background: linear-gradient(to bottom, transparent, var(--bg));
+    }
+    .hero-content {
+      position: relative;
+      z-index: 2;
+      padding: 0 7vw;
+    }
+    .hero-eyebrow {
+      font-size: 11px;
+      letter-spacing: 0.35em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 1.8rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .hero-eyebrow::before {
+      content: '';
+      display: inline-block;
+      width: 24px; height: 1px;
+      background: var(--accent);
+    }
+    /* blinking cursor after eyebrow */
+    .hero-eyebrow::after {
+      content: '|';
+      color: var(--accent);
+      animation: blink 1.1s step-end infinite;
+      margin-left: 2px;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0; }
+    }
+    .hero-name {
+      font-size: clamp(3.2rem, 7.5vw, 6.5rem);
+      font-weight: 700;
+      line-height: 0.95;
+      letter-spacing: -0.03em;
+      color: var(--text-bright);
+      margin-bottom: 2rem;
+      /* min-height prevents layout shift while typing */
+      min-height: 2em;
+    }
+    .hero-name .accent-line { color: var(--accent); display: block; }
+
+    /* inline typing cursor — injected by JS */
+    .type-cursor {
+      color: var(--accent);
+      font-weight: 300;
+      animation: blink 0.55s step-end infinite;
+      margin-left: 2px;
+    }
+    .type-cursor.fading {
+      animation: cursorFade 1s ease forwards;
+    }
+    @keyframes cursorFade {
+      0%   { opacity: 1; }
+      40%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
+    /* sub and chrome fade in after typing */
+    .hero-sub, .hero-reel-label, .hero-scroll {
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 0.7s ease, transform 0.7s ease;
+    }
+    .hero-sub.visible,
+    .hero-reel-label.visible,
+    .hero-scroll.visible {
+      opacity: 1;
+      transform: none;
+    }
+    .hero-sub {
+      font-size: 13px;
+      letter-spacing: 0.05em;
+      color: var(--text);
+      line-height: 1.9;
+      max-width: 380px;
+      font-weight: 300;
+    }
+    .hero-sub strong { color: var(--text-bright); font-weight: 500; }
+
+    .hero-reel-label {
+      position: absolute;
+      bottom: 5rem; right: 7vw;
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 10px;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+    .reel-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: var(--accent-glow);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.4; transform: scale(1);   }
+      50%       { opacity: 1;   transform: scale(1.3); }
+    }
+    .hero-scroll {
+      position: absolute;
+      bottom: 2.5rem; left: 7vw;
+      z-index: 3;
+      font-size: 10px;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .scroll-line {
+      display: inline-block;
+      width: 32px; height: 1px;
+      background: var(--accent);
+      animation: scrollLine 2.4s ease-in-out infinite;
+    }
+    @keyframes scrollLine {
+      0%, 100% { width: 20px; opacity: 0.3; }
+      50%       { width: 40px; opacity: 1;   }
+    }
+
+    /* ════════════════════════════════════════════
+       SECTION COMMON
+    ════════════════════════════════════════════ */
+    .section { padding: 110px 7vw; }
+    .section--alt { background: var(--surface); }
+    .section-head {
+      display: flex;
+      align-items: baseline;
+      gap: 20px;
+      margin-bottom: 60px;
+    }
+    .section-eyebrow {
+      font-size: 11px;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+    .section-eyebrow::before { content: '[ '; }
+    .section-eyebrow::after  { content: ' ]'; }
+    .section-title {
+      font-size: clamp(1.6rem, 2.8vw, 2.4rem);
+      font-weight: 600;
+      color: var(--text-bright);
+      letter-spacing: -0.015em;
+      flex-shrink: 0;
+    }
+    /* rule draws in from left on scroll */
+    .section-rule {
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(to right, var(--border), transparent);
+      min-width: 40px;
+      transform: scaleX(0);
+      transform-origin: left;
+      transition: transform 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.35s;
+    }
+    .section-head.in-view .section-rule { transform: scaleX(1); }
+
+    /* ════════════════════════════════════════════
+       CARDS
+    ════════════════════════════════════════════ */
+    .card {
+      background: var(--surface-2);
+      border: 1px solid var(--border-soft);
+      overflow: hidden;
+      cursor: none;
+      transition: border-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    .card:hover {
+      border-color: rgba(61, 255, 170, 0.25);
+      transform: translateY(-3px);
+      box-shadow: 0 12px 48px rgba(0,0,0,0.5);
+    }
+    .card-thumb {
+      width: 100%;
+      position: relative;
+      overflow: hidden;
+    }
+    .card-thumb-inner {
+      position: absolute;
+      inset: 0;
+      transition: transform 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .card:hover .card-thumb-inner { transform: scale(1.05); }
+    .card-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .card-thumb::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse at 25% 35%, rgba(255,255,255,0.045) 0%, transparent 55%),
+        radial-gradient(ellipse at 80% 75%, rgba(0,0,0,0.4) 0%, transparent 50%);
+      pointer-events: none;
+      z-index: 1;
+    }
+    .card-thumb::before {
+      content: '';
+      position: absolute;
+      top: 14px; left: 14px;
+      width: 16px; height: 16px;
+      border-top: 1px solid rgba(61, 255, 170, 0.3);
+      border-left: 1px solid rgba(61, 255, 170, 0.3);
+      z-index: 3;
+    }
+    .card-expand {
+      position: absolute;
+      inset: 0;
+      background: rgba(8, 8, 10, 0.65);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.22s ease;
+      z-index: 4;
+      font-size: 10px;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .card-expand::before { content: '+ '; }
+    .card:hover .card-expand { opacity: 1; }
+
+    .card-body { padding: 20px 22px 24px; }
+    .card-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+    .tag {
+      font-size: 10px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--accent);
+      border: 1px solid rgba(61, 255, 170, 0.18);
+      background: var(--accent-dim);
+      padding: 3px 9px;
+    }
+    .card-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-bright);
+      letter-spacing: 0.02em;
+      margin-bottom: 8px;
+      transition: color 0.2s ease;
+    }
+    .card:hover .card-title { color: var(--accent); }
+    .card-desc {
+      font-size: 12px;
+      color: var(--text-dim);
+      line-height: 1.75;
+      letter-spacing: 0.03em;
+      font-weight: 300;
+    }
+
+    /* ════════════════════════════════════════════
+       PLACEHOLDER GRADIENTS
+    ════════════════════════════════════════════ */
+    .ph-1  { background: linear-gradient(135deg, #080814 0%, #16103a 45%, #260e50 75%, #3a1870 100%); }
+    .ph-2  { background: linear-gradient(145deg, #080c14 0%, #0c1a30 40%, #122240 70%, #1a3055 100%); }
+    .ph-3  { background: linear-gradient(125deg, #0e0808 0%, #2a0c0c 45%, #3e1010 75%, #5a1414 100%); }
+    .ph-4  { background: linear-gradient(150deg, #080c0a 0%, #0c1e12 45%, #101e14 70%, #182a1e 100%); }
+    .ph-5  { background: linear-gradient(130deg, #08080e 0%, #10101e 40%, #16162a 70%, #20203a 100%); }
+    .ph-d1 { background: linear-gradient(135deg, #0a0610 0%, #1a0830 50%, #2e0c4e 100%); }
+    .ph-d2 { background: linear-gradient(145deg, #100608 0%, #280a10 50%, #420c18 100%); }
+    .ph-d3 { background: linear-gradient(125deg, #060c10 0%, #081a28 50%, #0c2840 100%); }
+    .ph-d4 { background: linear-gradient(140deg, #080a06 0%, #121c08 50%, #1e2c0e 100%); }
+    .ph-d5 { background: linear-gradient(130deg, #0c0808 0%, #201010 50%, #341616 100%); }
+    .ph-d6 { background: linear-gradient(145deg, #060810 0%, #0e1428 50%, #162042 100%); }
+
+    /* ════════════════════════════════════════════
+       3D WORK
+    ════════════════════════════════════════════ */
+    #work { background: var(--bg); }
+    .bento { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
+    .bento-card--wide  { grid-column: span 7; }
+    .bento-card--med   { grid-column: span 5; }
+    .bento-card--third { grid-column: span 4; }
+    .bento-card--wide  .card-thumb { aspect-ratio: 16/8; }
+    .bento-card--med   .card-thumb { aspect-ratio: 4/3; }
+    .bento-card--third .card-thumb { aspect-ratio: 4/3; }
+
+    /* ════════════════════════════════════════════
+       GRAPHIC DESIGN
+    ════════════════════════════════════════════ */
+    #design { background: var(--surface); }
+    .design-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .design-grid .card-thumb { aspect-ratio: 1 / 1; }
+
+    /* ════════════════════════════════════════════
+       ABOUT
+    ════════════════════════════════════════════ */
+    #about { background: var(--bg); }
+    .about-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: start; }
+    .about-bio { display: flex; flex-direction: column; gap: 22px; }
+    .about-bio p {
+      font-size: 13px;
+      line-height: 1.95;
+      color: var(--text-dim);
+      letter-spacing: 0.04em;
+      font-weight: 300;
+    }
+    .about-bio em { color: var(--text); font-style: normal; }
+    .avail-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--accent);
+      border: 1px solid rgba(61, 255, 170, 0.2);
+      background: var(--accent-dim);
+      padding: 8px 16px;
+      margin-top: 8px;
+      align-self: flex-start;
+    }
+    .avail-badge .dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    .skills-panel { display: flex; flex-direction: column; gap: 22px; }
+    .skill { display: flex; flex-direction: column; gap: 7px; }
+    .skill-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .skill-name  { color: var(--text); }
+    .skill-level { color: var(--text-dim); display: flex; align-items: center; gap: 8px; }
+    .skill-pct {
+      color: var(--accent);
+      font-size: 10px;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .skill.animated .skill-pct { opacity: 1; }
+    .skill-track { height: 1px; background: var(--border); position: relative; }
+    .skill-fill {
+      position: absolute;
+      top: 0; left: 0;
+      height: 100%;
+      background: var(--accent);
+      box-shadow: 0 0 8px rgba(61, 255, 170, 0.5);
+      width: 0;
+      transition: width 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .skill.animated .skill-fill { width: var(--pct); }
+
+    /* ════════════════════════════════════════════
+       CONTACT
+    ════════════════════════════════════════════ */
+    #contact { background: var(--surface); }
+    .contact-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: start; }
+    .contact-left p {
+      font-size: 13px;
+      line-height: 1.9;
+      color: var(--text-dim);
+      letter-spacing: 0.04em;
+      font-weight: 300;
+      margin-bottom: 36px;
+    }
+    .contact-links { display: flex; flex-direction: column; gap: 14px; }
+    .contact-link {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+    .contact-link::before {
+      content: '→';
+      color: var(--accent);
+      font-size: 11px;
+      display: inline-block;
+      transition: transform 0.2s ease;
+    }
+    .contact-link:hover { color: var(--accent); }
+    .contact-link:hover::before { transform: translateX(5px); }
+
+    .contact-form { display: flex; flex-direction: column; gap: 18px; }
+    .form-group { display: flex; flex-direction: column; gap: 7px; }
+    .form-label { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-dim); }
+    .form-field, .form-textarea {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      padding: 12px 14px;
+      outline: none;
+      transition: border-color 0.2s ease, background 0.2s ease;
+      width: 100%;
+    }
+    .form-field::placeholder, .form-textarea::placeholder { color: var(--text-dim); }
+    .form-field:focus, .form-textarea:focus {
+      border-color: rgba(61, 255, 170, 0.35);
+      background: rgba(61, 255, 170, 0.02);
+    }
+    .form-textarea { resize: vertical; min-height: 130px; }
+    .form-btn {
+      align-self: flex-start;
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-family: var(--font);
+      font-size: 10px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      padding: 13px 28px;
+      cursor: none;
+      transition: background 0.22s ease, color 0.22s ease;
+    }
+    .form-btn:hover { background: var(--accent); color: var(--bg); }
+
+    /* ════════════════════════════════════════════
+       FOOTER
+    ════════════════════════════════════════════ */
+    footer {
+      background: var(--bg);
+      border-top: 1px solid var(--border-soft);
+      padding: 28px 7vw;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    footer span { font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); }
+    footer .footer-accent { color: var(--accent); }
+
+    /* ════════════════════════════════════════════
+       MODAL
+    ════════════════════════════════════════════ */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(4, 4, 6, 0.88);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+    .modal-overlay.open { opacity: 1; pointer-events: all; }
+    .modal-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      width: 100%;
+      max-width: 900px;
+      max-height: 90vh;
+      overflow-y: auto;
+      overflow-x: hidden;
+      position: relative;
+      transform: translateY(20px) scale(0.97);
+      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .modal-overlay.open .modal-panel { transform: translateY(0) scale(1); }
+    .modal-panel::-webkit-scrollbar { width: 4px; }
+    .modal-panel::-webkit-scrollbar-thumb { background: var(--border); }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 28px;
+      border-bottom: 1px solid var(--border-soft);
+      position: sticky;
+      top: 0;
+      background: var(--surface);
+      z-index: 2;
+    }
+    .modal-id { font-size: 10px; letter-spacing: 0.25em; text-transform: uppercase; color: var(--accent); }
+    .modal-id::before { content: '// '; color: var(--text-dim); }
+    .modal-close {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-family: var(--font);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      padding: 6px 14px;
+      cursor: none;
+      transition: border-color 0.2s ease, color 0.2s ease;
+      line-height: 1;
+    }
+    .modal-close:hover { border-color: var(--accent); color: var(--accent); }
+    .modal-hero {
+      width: 100%;
+      aspect-ratio: 16/8;
+      position: relative;
+      overflow: hidden;
+    }
+    .modal-hero img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .modal-hero::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse at 30% 40%, rgba(255,255,255,0.04) 0%, transparent 55%),
+        linear-gradient(to bottom, transparent 60%, rgba(8,8,10,0.6) 100%);
+    }
+    .modal-body { padding: 32px 28px 40px; }
+    .modal-title {
+      font-size: clamp(1.4rem, 3vw, 2rem);
+      font-weight: 700;
+      color: var(--text-bright);
+      letter-spacing: -0.02em;
+      margin-bottom: 16px;
+    }
+    .modal-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 28px; }
+    .modal-desc {
+      font-size: 13px;
+      color: var(--text-dim);
+      line-height: 1.85;
+      letter-spacing: 0.03em;
+      font-weight: 300;
+      margin-bottom: 32px;
+    }
+    .modal-desc p + p { margin-top: 14px; }
+    .modal-desc em { color: var(--text); font-style: normal; }
+    .modal-details {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      background: var(--border-soft);
+      border: 1px solid var(--border-soft);
+      margin-bottom: 36px;
+    }
+    .modal-detail { background: var(--surface-2); padding: 16px 20px; }
+    .modal-detail-label { font-size: 10px; letter-spacing: 0.25em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; }
+    .modal-detail-value { font-size: 12px; color: var(--text); letter-spacing: 0.05em; }
+    .modal-gallery-label { font-size: 10px; letter-spacing: 0.25em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 12px; }
+    .modal-gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .modal-gallery-item { aspect-ratio: 4/3; position: relative; overflow: hidden; border: 1px solid var(--border-soft); }
+    .modal-gallery-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .modal-gallery-item::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at 30% 30%, rgba(255,255,255,0.035) 0%, transparent 60%);
+    }
+
+    /* ════════════════════════════════════════════
+       SCROLL ANIMATIONS
+    ════════════════════════════════════════════ */
+    .reveal {
+      opacity: 0;
+      transform: translateY(22px);
+      transition: opacity 0.65s ease, transform 0.65s ease;
+    }
+    .reveal.in-view { opacity: 1; transform: none; }
+
+    .stagger-grid { opacity: 0; }
+    .stagger-grid.in-view { opacity: 1; }
+    .stagger-grid .card {
+      opacity: 0;
+      transform: translateY(18px);
+      transition-property: opacity, transform, border-color, box-shadow;
+    }
+    .stagger-grid .card:nth-child(1) { transition-delay: 0s; }
+    .stagger-grid .card:nth-child(2) { transition-delay: 0.07s; }
+    .stagger-grid .card:nth-child(3) { transition-delay: 0.14s; }
+    .stagger-grid .card:nth-child(4) { transition-delay: 0.21s; }
+    .stagger-grid .card:nth-child(5) { transition-delay: 0.28s; }
+    .stagger-grid .card:nth-child(6) { transition-delay: 0.35s; }
+    .stagger-grid.in-view .card { opacity: 1; transform: none; }
+
+    body.modal-open { overflow: hidden; }
+
+    /* ════════════════════════════════════════════
+       RESPONSIVE — TABLET  (≤ 900px)
+       Two-column grid, stacked bio/contact,
+       modal details compress to 2-up.
+    ════════════════════════════════════════════ */
+    @media (max-width: 900px) {
+      .section { padding: 80px 5vw; }
+
+      /* Bento → 2-col, first card spans both */
+      .bento { grid-template-columns: 1fr 1fr; gap: 12px; }
+      .bento-card--wide, .bento-card--med, .bento-card--third { grid-column: span 1; }
+      .bento-card--wide:first-child { grid-column: span 2; }
+
+      /* Design → 2-col */
+      .design-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
+
+      /* Stacked sections */
+      .about-layout, .contact-layout { grid-template-columns: 1fr; gap: 48px; }
+
+      /* Modal compress */
+      .modal-details { grid-template-columns: 1fr 1fr; }
+      .modal-gallery  { grid-template-columns: 1fr 1fr; }
+      .modal-panel { max-width: 100%; }
+    }
+
+    /* Tablet touch — no hover, always show nav labels as persistent hints */
+    @media (max-width: 900px) and (hover: none) and (pointer: coarse) {
+      .nav { right: 1.25rem; }
+      .nav-label {
+        opacity: 1;
+        transform: translateX(0);
+      }
+      /* Kill stagger delays — labels are always visible */
+      .nav-item:nth-child(1) .nav-label,
+      .nav-item:nth-child(2) .nav-label,
+      .nav-item:nth-child(3) .nav-label,
+      .nav-item:nth-child(4) .nav-label,
+      .nav-item:nth-child(5) .nav-label {
+        transition-delay: 0ms;
+      }
+      /* Larger pips = better tap targets */
+      .nav-pip { width: 9px; height: 9px; }
+      .nav-item { gap: 18px; padding: 6px 0; }
+    }
+
+    /* ════════════════════════════════════════════
+       RESPONSIVE — MOBILE  (≤ 599px)
+       Single-col layout, hero adjustments,
+       bottom tab bar nav, bottom-sheet modals.
+    ════════════════════════════════════════════ */
+    @media (max-width: 599px) {
+      /* ── HERO ── */
+      .hero-content { padding: 0 20px; }
+      .hero-name {
+        font-size: clamp(2.5rem, 12vw, 3.2rem);
+        min-height: auto;
+      }
+      .hero-sub { font-size: 12px; max-width: 100%; }
+      .hero-reel-label { display: none; } /* screen real-estate — cut on mobile */
+      .hero-scroll { bottom: calc(68px + env(safe-area-inset-bottom, 0px) + 1.5rem); left: 20px; }
+
+      /* ── SECTIONS ── */
+      .section { padding: 60px 20px; }
+      .section-head { flex-wrap: wrap; gap: 10px; margin-bottom: 32px; }
+      .section-rule { display: none; } /* rule draw looks odd on narrow wrapping headers */
+      .section-title { font-size: clamp(1.4rem, 5.5vw, 1.8rem); }
+
+      /* ── GRIDS ── */
+      .bento { grid-template-columns: 1fr; gap: 10px; }
+      .bento-card--wide:first-child { grid-column: span 1; }
+      /* Design stays 2-col — square cards are fine at phone width */
+      .design-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+
+      /* ── ABOUT ── */
+      .about-layout { gap: 36px; }
+      .about-bio p { font-size: 13px; }
+
+      /* ── CONTACT ── */
+      .contact-layout { gap: 36px; }
+      .form-btn { align-self: stretch; text-align: center; }
+
+      /* ── FOOTER ── */
+      footer {
+        flex-direction: column;
+        gap: 6px;
+        text-align: center;
+        /* push above bottom nav */
+        padding-bottom: calc(68px + env(safe-area-inset-bottom, 12px) + 20px);
+      }
+
+      /* ── LAST SECTION bottom pad — prevent content hiding behind nav bar ── */
+      #contact { padding-bottom: calc(60px + 68px + env(safe-area-inset-bottom, 12px)); }
+
+      /* ── MODAL — full-height bottom sheet ── */
+      .modal-overlay { padding: 0; align-items: flex-end; }
+      .modal-panel {
+        max-height: 93dvh;
+        max-height: 93vh; /* fallback */
+        border-radius: 12px 12px 0 0;
+      }
+      .modal-header { padding: 14px 18px; }
+      .modal-body { padding: 22px 18px 32px; }
+      .modal-hero { aspect-ratio: 16/9; }
+      .modal-details { grid-template-columns: 1fr 1fr; gap: 1px; }
+      .modal-gallery { grid-template-columns: 1fr 1fr; gap: 6px; }
+      .modal-title { font-size: clamp(1.2rem, 5vw, 1.6rem); }
+
+      /* ── BOTTOM NAV BAR ── */
+      /* Rip the nav out of the right-side column and turn it into a
+         bottom tab bar, iOS-style. Labels always visible, pips act as
+         active indicators below each label. */
+      .nav {
+        position: fixed;
+        right: auto;
+        top: auto;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        transform: none;
+        background: rgba(8, 8, 10, 0.96);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border-top: 1px solid var(--border);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+        z-index: 900;
+      }
+      .nav-track {
+        flex-direction: row;
+        justify-content: space-around;
+        align-items: center;
+        gap: 0;
+        padding: 10px 0 10px;
+      }
+      .nav-item {
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 8px;
+        min-width: 52px;
+      }
+      /* Pip goes on top, label below — standard tab bar convention */
+      .nav-pip { order: 1; width: 5px; height: 5px; }
+      .nav-label {
+        order: 2;
+        opacity: 1;
+        transform: none;
+        font-size: 8px;
+        letter-spacing: 0.12em;
+        pointer-events: none;
+        white-space: nowrap;
+        /* Color driven by active pip state */
+        color: var(--text-dim);
+      }
+      /* Highlight label when pip is active — uses :has() (Chrome 105+, Safari 15.4+, FF 121+) */
+      .nav-item:has(.nav-pip.active) .nav-label { color: var(--accent); }
+      /* Kill ALL stagger delays — labels are always visible on mobile */
+      .nav-item:nth-child(1) .nav-label,
+      .nav-item:nth-child(2) .nav-label,
+      .nav-item:nth-child(3) .nav-label,
+      .nav-item:nth-child(4) .nav-label,
+      .nav-item:nth-child(5) .nav-label,
+      .nav-track:hover .nav-item:nth-child(1) .nav-label,
+      .nav-track:hover .nav-item:nth-child(2) .nav-label,
+      .nav-track:hover .nav-item:nth-child(3) .nav-label,
+      .nav-track:hover .nav-item:nth-child(4) .nav-label,
+      .nav-track:hover .nav-item:nth-child(5) .nav-label {
+        transition-delay: 0ms;
+      }
+
+      /* Cards: faster touch response */
+      .card { touch-action: manipulation; }
+      /* Show a persistent tap cue on cards since hover won't fire */
+      .card-thumb::after {
+        background:
+          radial-gradient(ellipse at 25% 35%, rgba(255,255,255,0.04) 0%, transparent 55%),
+          radial-gradient(ellipse at 80% 75%, rgba(0,0,0,0.35) 0%, transparent 50%);
+      }
+    }
+
+    /* ── Very small phones (≤ 380px) ── */
+    @media (max-width: 380px) {
+      .hero-name { font-size: 2.3rem; }
+      .section { padding: 48px 16px; }
+      .design-grid { grid-template-columns: 1fr; } /* single col on tiny phones */
+      .nav-label { font-size: 7px; letter-spacing: 0.08em; }
+      .nav-item { min-width: 44px; padding: 6px 4px; }
+    }
+
+    /* ════════════════════════════════════════════
+       REDUCED MOTION
+    ════════════════════════════════════════════ */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+      .hero-sub, .hero-reel-label, .hero-scroll {
+        opacity: 1; transform: none;
+      }
+      .reveal { opacity: 1; transform: none; }
+      .stagger-grid { opacity: 1; }
+      .stagger-grid .card { opacity: 1; transform: none; }
+      .section-rule { transform: scaleX(1); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- cursor: instant dot + lerped ring -->
+<div class="cursor-dot"  id="cursor-dot"></div>
+<div class="cursor-ring" id="cursor-ring"></div>
+
+<!-- ════════════════════════════════════════════
+     MODAL
+════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title-el">
+  <div class="modal-panel" id="modal-panel">
+    <div class="modal-header">
+      <span class="modal-id" id="modal-id-el"></span>
+      <button class="modal-close" id="modal-close-btn">ESC / close</button>
+    </div>
+    <div class="modal-hero"    id="modal-hero-el"></div>
+    <div class="modal-body">
+      <h2 class="modal-title"   id="modal-title-el"></h2>
+      <div class="modal-tags"   id="modal-tags-el"></div>
+      <div class="modal-desc"   id="modal-desc-el"></div>
+      <div class="modal-details" id="modal-details-el"></div>
+      <p class="modal-gallery-label">Additional Views</p>
+      <div class="modal-gallery" id="modal-gallery-el"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     NAV
+════════════════════════════════════════════ -->
+<nav class="nav" id="site-nav" aria-label="Sections">
+  <div class="nav-track">
+    <div class="nav-item" data-target="hero">
+      <span class="nav-label">Home</span>
+      <div class="nav-pip active" data-section="hero"></div>
+    </div>
+    <div class="nav-item" data-target="work">
+      <span class="nav-label">3D Work</span>
+      <div class="nav-pip" data-section="work"></div>
+    </div>
+    <div class="nav-item" data-target="design">
+      <span class="nav-label">Design</span>
+      <div class="nav-pip" data-section="design"></div>
+    </div>
+    <div class="nav-item" data-target="about">
+      <span class="nav-label">About</span>
+      <div class="nav-pip" data-section="about"></div>
+    </div>
+    <div class="nav-item" data-target="contact">
+      <span class="nav-label">Contact</span>
+      <div class="nav-pip" data-section="contact"></div>
+    </div>
+  </div>
+</nav>
+
+<!-- ════════════════════════════════════════════
+     HERO
+════════════════════════════════════════════ -->
+<section id="hero">
+  <div class="hero-bg"></div>
+  <video class="hero-video" autoplay muted loop playsinline preload="auto" poster="reel-poster.jpg" id="hero-video">
+    <source src="reel.mp4" type="video/mp4">
+  </video>
+  <div class="hero-veil"></div>
+  <div class="hero-veil-bottom"></div>
+
+  <div class="hero-content">
+    <p class="hero-eyebrow">3D Artist &amp; Graphic Designer</p>
+    <h1 class="hero-name">
+      <span id="hero-line-1">A Very</span><br>
+      <span class="accent-line" id="hero-line-2">Bad Idea</span>
+    </h1>
+    <p class="hero-sub">
+      Dimensional worlds. Graphic systems.<br>
+      <strong>Things that shouldn't exist</strong> — built carefully.
+    </p>
+  </div>
+
+  <div class="hero-reel-label"><span class="reel-dot"></span>Demo Reel</div>
+  <div class="hero-scroll"><span class="scroll-line"></span>Scroll</div>
+</section>
+
+<!-- ════════════════════════════════════════════
+     3D WORK
+════════════════════════════════════════════ -->
+<section class="section" id="work">
+  <div class="section-head reveal">
+    <span class="section-eyebrow">3D Work</span>
+    <h2 class="section-title">Renders &amp; Scenes</h2>
+    <div class="section-rule"></div>
+  </div>
+  <div class="bento stagger-grid">
+    <div class="card bento-card--wide" data-project="volumetric-study">
+      <div class="card-thumb">
+        <div class="card-thumb-inner ph-1"></div>
+        <div class="card-expand">View Project</div>
+      </div>
+      <div class="card-body">
+        <div class="card-tags"><span class="tag">Blender</span><span class="tag">Cycles</span><span class="tag">Volumetrics</span></div>
+        <h3 class="card-title">Volumetric Study No. 1</h3>
+        <p class="card-desc">Light diffusion through dense volumetric fog — heavy Cycles render, 2048 samples, ACES tone-mapping.</p>
+      </div>
+    </div>
+    <div class="card bento-card--med" data-project="industrial-fragment">
+      <div class="card-thumb">
+        <div class="card-thumb-inner ph-2"></div>
+        <div class="card-expand">View Project</div>
+      </div>
+      <div class="card-body">
+        <div class="card-tags"><span class="tag">Hard Surface</span><span class="tag">PBR Materials</span></div>
+        <h3 class="card-title">Industrial Fragment</h3>
+        <p class="card-desc">Hard surface modeling. Worn metal, procedural rust, chipped paint via multi-layered shaders.</p>
+      </div>
+    </div>
+    <div class="card bento-card--third" data-project="form-study">
+      <div class="card-thumb">
+        <div class="card-thumb-inner ph-3"></div>
+        <div class="card-expand">View Project</div>
+      </div>
+      <div class="card-body">
+        <div class="card-tags"><span class="tag">Sculpt</span><span class="tag">Character</span></div>
+        <h3 class="card-title">Form Study</h3>
+        <p class="card-desc">Digital sculpt — anatomy, stylized surface detail, and custom MatCap shading.</p>
+      </div>
+    </div>
+    <div class="card bento-card--third" data-project="procedural-landscape">
+      <div class="card-thumb">
+        <div class="card-thumb-inner ph-4"></div>
+        <div class="card-expand">View Project</div>
+      </div>
+      <div class="card-body">
+        <div class="card-tags"><span class="tag">Geometry Nodes</span><span class="tag">Environment</span></div>
+        <h3 class="card-title">Procedural Landscape</h3>
+        <p class="card-desc">Geometry Nodes terrain system with adaptive detail, layered sky, and atmospheric depth.</p>
+      </div>
+    </div>
+    <div class="card bento-card--third" data-project="shader-lab">
+      <div class="card-thumb">
+        <div class="card-thumb-inner ph-5"></div>
+        <div class="card-expand">View Project</div>
+      </div>
+      <div class="card-body">
+        <div class="card-tags"><span class="tag">Shaders</span><span class="tag">Abstract</span></div>
+        <h3 class="card-title">Shader Lab</h3>
+        <p class="card-desc">Experimental material nodes — noise stacks, procedural displacement, emission maps.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════
+     GRAPHIC DESIGN
+════════════════════════════════════════════ -->
+<section class="section section--alt" id="design">
+  <div class="section-head reveal">
+    <span class="section-eyebrow">Design</span>
+    <h2 class="section-title">Graphic Work</h2>
+    <div class="section-rule"></div>
+  </div>
+  <div class="design-grid stagger-grid">
+    <div class="card" data-project="brand-system">
+      <div class="card-thumb"><div class="card-thumb-inner ph-d1"></div><div class="card-expand">View Project</div></div>
+      <div class="card-body"><div class="card-tags"><span class="tag">Identity</span><span class="tag">Logo</span></div><h3 class="card-title">Brand System</h3><p class="card-desc">Full visual identity — logomark, type hierarchy, color system, usage guides.</p></div>
+    </div>
+    <div class="card" data-project="editorial-layout">
+      <div class="card-thumb"><div class="card-thumb-inner ph-d2"></div><div class="card-expand">View Project</div></div>
+      <div class="card-body"><div class="card-tags"><span class="tag">Print</span><span class="tag">Editorial</span></div><h3 class="card-title">Editorial Layout</h3><p class="card-desc">Print and digital editorial design. Grid systems, modular type, column logic.</p></div>
+    </div>
+    <div class="card" data-project="poster-series">
+      <div class="card-thumb"><div class="card-thumb-inner ph-d3"></div><div class="card-expand">View Project</div></div>
+      <div class="card-body"><div class="card-tags"><span class="tag">Poster</span><span class="tag">Illustration</span></div><h3 class="card-title">Event Poster Series</h3><p class="card-desc">A series of posters — mixed media, digital illustration, heavy typographic hierarchy.</p></div>
+    </div>
+    <div class="card" data-project="interface-motion">
+      <div class="card-thumb"><div class="card-thumb-inner ph-d4"></div><div class="card-expand">View Project</div></div>
+      <div class="card-body"><div class="card-tags"><span class="tag">Motion</span><span class="tag">UI</span></div><h3 class="card-title">Interface Motion</h3><p class="card-desc">UI animation system — timing curves, state transitions, micro-interaction design.</p></div>
+    </div>
+    <div class="card" data-project="type-study">
+      <div class="card-thumb"><div class="card-thumb-inner ph-d5"></div><div class="card-expand">View Project</div></div>
+      <div class="card-body"><div class="card-tags"><span class="tag">Typography</span><span class="tag">Experimental</span></div><h3 class="card-title">Type Study</h3><p class="card-desc">Display typography experiments. Optical sizing, letterspacing, variable font axes.</p></div>
+    </div>
+    <div class="card" data-project="product-packaging">
+      <div class="card-thumb"><div class="card-thumb-inner ph-d6"></div><div class="card-expand">View Project</div></div>
+      <div class="card-body"><div class="card-tags"><span class="tag">Packaging</span><span class="tag">3D Mockup</span></div><h3 class="card-title">Product Packaging</h3><p class="card-desc">Physical packaging design with Blender-rendered 3D dielines and mockup shots.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════
+     ABOUT
+════════════════════════════════════════════ -->
+<section class="section" id="about">
+  <div class="section-head reveal">
+    <span class="section-eyebrow">About</span>
+    <h2 class="section-title">The Work</h2>
+    <div class="section-rule"></div>
+  </div>
+  <div class="about-layout">
+    <div class="about-bio reveal">
+      <p>I go by <em>A Very Bad Idea</em>. I make things that probably shouldn't exist — <em>three-dimensional scenes</em>, <em>motion work</em>, <em>visual identities</em>, and anything else that sits at the intersection of design and dimension.</p>
+      <p>My tools are <em>Blender</em>, <em>Illustrator</em>, <em>Photoshop</em>, and a stubbornly high standard for craft. I work across 3D visualization, graphic design, motion graphics, and brand identity — sometimes all in the same project.</p>
+      <p>If you have a project that sounds like a bad idea, that's probably a sign we should talk.</p>
+      <div class="avail-badge"><span class="dot"></span>Available for freelance</div>
+    </div>
+    <div class="skills-panel reveal">
+      <div class="skill"><div class="skill-row"><span class="skill-name">Blender / 3D</span><span class="skill-level">Expert <span class="skill-pct" data-target="92">0%</span></span></div><div class="skill-track"><div class="skill-fill" style="--pct:92%"></div></div></div>
+      <div class="skill"><div class="skill-row"><span class="skill-name">Graphic Design</span><span class="skill-level">Expert <span class="skill-pct" data-target="88">0%</span></span></div><div class="skill-track"><div class="skill-fill" style="--pct:88%"></div></div></div>
+      <div class="skill"><div class="skill-row"><span class="skill-name">Shader / Materials</span><span class="skill-level">Advanced <span class="skill-pct" data-target="84">0%</span></span></div><div class="skill-track"><div class="skill-fill" style="--pct:84%"></div></div></div>
+      <div class="skill"><div class="skill-row"><span class="skill-name">Motion Graphics</span><span class="skill-level">Advanced <span class="skill-pct" data-target="78">0%</span></span></div><div class="skill-track"><div class="skill-fill" style="--pct:78%"></div></div></div>
+      <div class="skill"><div class="skill-row"><span class="skill-name">Brand Identity</span><span class="skill-level">Advanced <span class="skill-pct" data-target="75">0%</span></span></div><div class="skill-track"><div class="skill-fill" style="--pct:75%"></div></div></div>
+      <div class="skill"><div class="skill-row"><span class="skill-name">Geometry Nodes</span><span class="skill-level">Proficient <span class="skill-pct" data-target="70">0%</span></span></div><div class="skill-track"><div class="skill-fill" style="--pct:70%"></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════
+     CONTACT
+════════════════════════════════════════════ -->
+<section class="section section--alt" id="contact">
+  <div class="section-head reveal">
+    <span class="section-eyebrow">Contact</span>
+    <h2 class="section-title">Let's Build Something</h2>
+    <div class="section-rule"></div>
+  </div>
+  <div class="contact-layout">
+    <div class="contact-left reveal">
+      <p>Open for freelance projects, commissions, and collaborations. Tell me what you're working on — even if it sounds like a bad idea.</p>
+      <div class="contact-links">
+        <a href="mailto:hello@averybadidea.art" class="contact-link">hello@averybadidea.art</a>
+        <a href="#" class="contact-link">Instagram</a>
+        <a href="#" class="contact-link">ArtStation</a>
+        <a href="#" class="contact-link">Behance</a>
+      </div>
+    </div>
+    <form class="contact-form reveal" onsubmit="return false">
+      <div class="form-group"><label class="form-label">Name</label><input class="form-field" type="text" placeholder="your name" autocomplete="name"></div>
+      <div class="form-group"><label class="form-label">Email</label><input class="form-field" type="email" placeholder="your@email.com" autocomplete="email"></div>
+      <div class="form-group"><label class="form-label">What are you working on?</label><textarea class="form-textarea" placeholder="project description, timeline, budget..."></textarea></div>
+      <button class="form-btn" type="submit">Send Message →</button>
+    </form>
+  </div>
+</section>
+
+<footer>
+  <span>© 2026 <span class="footer-accent">A Very Bad Idea</span></span>
+  <span>3D &amp; Graphic Design</span>
+</footer>
+
+<!-- ════════════════════════════════════════════
+     SCRIPTS
+════════════════════════════════════════════ -->
+<script>
+/* ══════════════════════════════
+   CURSOR — instant dot + weighted ring
+   Dot follows mouse directly each frame.
+   Ring lerps toward mouse in rAF loop —
+   factor 0.18 gives barely-perceptible
+   weight without visible drift.
+══════════════════════════════ */
+const curDot  = document.getElementById('cursor-dot');
+const curRing = document.getElementById('cursor-ring');
+let mouseX = 0, mouseY = 0;
+let ringX  = 0, ringY  = 0;
+
+document.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  // Dot is always exactly on the pointer
+  curDot.style.left = mouseX + 'px';
+  curDot.style.top  = mouseY + 'px';
+});
+
+// Ring lerp loop — runs every frame
+(function lerpRing() {
+  // 0.18 = closes 18% of remaining gap per frame (~60fps)
+  // Feels like a tiny amount of physical weight, not rubber-band lag
+  ringX += (mouseX - ringX) * 0.30;
+  ringY += (mouseY - ringY) * 0.30;
+  curRing.style.left = ringX + 'px';
+  curRing.style.top  = ringY + 'px';
+  requestAnimationFrame(lerpRing);
+})();
+
+document.querySelectorAll('a, button, .card, .nav-item, .form-btn, [role="button"]').forEach(el => {
+  el.addEventListener('mouseenter', () => document.body.classList.add('cursor-hover'));
+  el.addEventListener('mouseleave', () => document.body.classList.remove('cursor-hover'));
+});
+
+/* ══════════════════════════════
+   HERO TYPEWRITER
+   Types each line sequentially with a blinking | cursor,
+   then fades the cursor out when done.
+══════════════════════════════ */
+(function initTypewriter() {
+  const line1 = document.getElementById('hero-line-1');
+  const line2 = document.getElementById('hero-line-2');
+
+  // Grab text before clearing
+  const text1 = line1.textContent.trim();
+  const text2 = line2.textContent.trim();
+  line1.textContent = '';
+  line2.textContent = '';
+
+  const typeCursor = document.createElement('span');
+  typeCursor.className = 'type-cursor';
+  typeCursor.textContent = '|';
+
+  function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  async function typeLine(el, text, speed) {
+    el.appendChild(typeCursor);
+    for (let i = 0; i <= text.length; i++) {
+      // text node before cursor
+      const textNode = document.createTextNode(text.slice(0, i));
+      el.insertBefore(textNode, typeCursor);
+      // remove previous text node each step
+      if (el.childNodes.length > 2) el.removeChild(el.childNodes[0]);
+      await delay(speed + Math.random() * 22);
+    }
+    // Settle: set plain text, move cursor out
+    el.textContent = text;
+    el.appendChild(typeCursor);
+  }
+
+  async function run() {
+    await delay(200); // brief pause before starting
+    await typeLine(line1, text1, 85);
+    line1.textContent = text1; // clean up
+    await delay(110);
+    await typeLine(line2, text2, 85);
+    line2.textContent = text2;
+    line2.appendChild(typeCursor);
+
+    // Blink a moment, then fade the cursor
+    await delay(820);
+    typeCursor.classList.add('fading');
+    await delay(1000);
+    typeCursor.remove();
+
+    // Fade in sub-content after typing is done
+    document.querySelector('.hero-sub').classList.add('visible');
+    await delay(150);
+    document.querySelector('.hero-reel-label').classList.add('visible');
+    await delay(80);
+    document.querySelector('.hero-scroll').classList.add('visible');
+  }
+
+  run();
+})();
+
+/* ══════════════════════════════
+   HERO VIDEO
+══════════════════════════════ */
+const heroVideo = document.getElementById('hero-video');
+if (heroVideo) {
+  heroVideo.addEventListener('canplaythrough', () => heroVideo.classList.add('loaded'), { once: true });
+  if (heroVideo.readyState >= 3) heroVideo.classList.add('loaded');
+}
+
+/* ══════════════════════════════
+   NAV
+══════════════════════════════ */
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    const el = document.getElementById(item.dataset.target);
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
+  });
+});
+const pips = document.querySelectorAll('.nav-pip');
+new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting)
+      pips.forEach(p => p.classList.toggle('active', p.dataset.section === e.target.id));
+  });
+}, { threshold: 0.35 }).observe.apply(
+  new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting)
+        pips.forEach(p => p.classList.toggle('active', p.dataset.section === e.target.id));
+    });
+  }, { threshold: 0.35 }),
+  // inline observe loop below
+  [document.getElementById('hero')]
+);
+// properly wire up section observer
+// Use a lower threshold on narrow / touch screens so tall sections trigger correctly
+(function() {
+  const isMobile = window.matchMedia('(max-width: 599px)').matches;
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting)
+        pips.forEach(p => p.classList.toggle('active', p.dataset.section === e.target.id));
+    });
+  }, { threshold: isMobile ? 0.15 : 0.35 });
+  ['hero','work','design','about','contact'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) obs.observe(el);
+  });
+})();
+
+/* ══════════════════════════════
+   SCROLL REVEAL
+══════════════════════════════ */
+new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.classList.add('in-view');
+      // don't unobserve section-heads — rule needs to stay scaleX(1)
+    }
+  });
+}, { threshold: 0.1, rootMargin: '0px 0px -60px 0px' })
+.apply
+// use proper pattern:
+;
+(function() {
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('in-view'); });
+  }, { threshold: 0.1, rootMargin: '0px 0px -60px 0px' });
+  document.querySelectorAll('.reveal, .stagger-grid').forEach(el => obs.observe(el));
+})();
+
+/* ══════════════════════════════
+   SKILL BARS + COUNTER
+══════════════════════════════ */
+function countUp(el, target, duration) {
+  let start;
+  (function step(ts) {
+    if (!start) start = ts;
+    const p = Math.min((ts - start) / duration, 1);
+    el.textContent = Math.round((1 - Math.pow(1 - p, 3)) * target) + '%';
+    if (p < 1) requestAnimationFrame(step);
+  })(performance.now());
+}
+new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.querySelectorAll('.skill').forEach((s, i) => {
+        setTimeout(() => {
+          s.classList.add('animated');
+          const pctEl = s.querySelector('.skill-pct');
+          if (pctEl) countUp(pctEl, +pctEl.dataset.target, 1200);
+        }, i * 80);
+      });
+    }
+  });
+}, { threshold: 0.2 }).observe(document.querySelector('.skills-panel'));
+
+/* ══════════════════════════════
+   PROJECT DATA
+══════════════════════════════ */
+const PROJECTS = {
+  'volumetric-study': {
+    id:'vol_study_01', title:'Volumetric Study No. 1',
+    tags:['Blender','Cycles X','Volumetrics','Lighting'], ph:'ph-1', gallery:['ph-2','ph-3','ph-4'],
+    desc:`<p>An exploration of <em>light diffusion through dense volumetric fog</em>. The central challenge was getting volumetric scattering to feel physically accurate without render artifacts — solved through careful placement of area lights at oblique angles and a custom Principled Volume shader stack with anisotropy tuning.</p><p>Rendered in Blender's Cycles X at 2048 samples with adaptive sampling engaged. Post-processed with ACES tone-mapping and a subtle grain pass to keep the atmospheric feel from reading as too digital. Total render time: approximately 4 hours at 1920×1080.</p>`,
+    details:{Software:'Blender 4.1', Renderer:'Cycles X', Year:'2024'},
+  },
+  'industrial-fragment': {
+    id:'hard_surf_02', title:'Industrial Fragment',
+    tags:['Hard Surface','PBR Materials','Blender','EEVEE'], ph:'ph-2', gallery:['ph-1','ph-5','ph-3'],
+    desc:`<p>A study in <em>material aging and surface complexity</em>. Every element of the rust, paint chips, and edge wear is entirely procedural — no texture image files. Built from layered noise nodes, position data, and object coordinate inputs blended through color ramp curves.</p><p>The mesh uses precise boolean operations and multi-segment edge bevels to maintain readable silhouettes at all viewing angles. Rendered in EEVEE for real-time material previewing during development.</p>`,
+    details:{Software:'Blender 4.0', Renderer:'EEVEE Next', Year:'2024'},
+  },
+  'form-study': {
+    id:'sculpt_03', title:'Form Study',
+    tags:['Sculpt Mode','Character','Retopology','Blender'], ph:'ph-3', gallery:['ph-1','ph-2','ph-5'],
+    desc:`<p>Started from a base mesh, pushed entirely within <em>Blender's Sculpt Mode</em>. The goal was stylized anatomy — structure and gesture that reads clearly without committing to photorealism. Particular attention to the planes of the face and the way cloth mass sits against underlying form.</p><p>After the high-poly sculpt, a clean retopology pass was done manually for correct edge flow. Normal maps baked from the 20M-poly sculpt onto the production mesh.</p>`,
+    details:{Software:'Blender 4.1', Technique:'Sculpt + Retopo', Year:'2024'},
+  },
+  'procedural-landscape': {
+    id:'geo_nodes_04', title:'Procedural Landscape',
+    tags:['Geometry Nodes','Environment','Procedural','Cycles'], ph:'ph-4', gallery:['ph-1','ph-5','ph-2'],
+    desc:`<p>The entire terrain, vegetation scatter, and rock distribution is <em>driven purely by Geometry Nodes</em> — zero manual placement. Height data flows through a math node stack that feeds into material mixing for snow caps, exposed rock face, and grassland zones based on slope angle and elevation.</p><p>The sky is built with Blender's physical atmosphere shader, dialed in for late afternoon light. Cloud coverage uses a custom volume shader driven by procedural noise.</p>`,
+    details:{Software:'Blender 4.1', Tech:'Geometry Nodes', Year:'2024'},
+  },
+  'shader-lab': {
+    id:'shader_lab_05', title:'Shader Lab',
+    tags:['Shaders','Abstract','Procedural','Node Editor'], ph:'ph-5', gallery:['ph-1','ph-2','ph-3'],
+    desc:`<p>An ongoing series of <em>experimental material builds</em> using only Blender's native node system — no external texture files. Each piece is a self-contained node tree that could be applied to any geometry.</p><p>Techniques explored: fractal noise stacks, UV distortion via vector math, procedural iridescence using wavelength-to-RGB nodes, and animated emission masks driven by scene time.</p>`,
+    details:{Software:'Blender 4.x', Type:'Ongoing Series', Year:'2023–24'},
+  },
+  'brand-system': {
+    id:'brand_01', title:'Brand System',
+    tags:['Identity','Logo','Typography','Illustrator'], ph:'ph-d1', gallery:['ph-d2','ph-d3','ph-d6'],
+    desc:`<p>Complete visual identity built from the ground up — <em>wordmark, logomark, color palette, type scale, icon set, and usage guidelines</em>. The system was designed to flex across digital and print applications without losing cohesion.</p><p>Delivered as production-ready assets in Illustrator and exported for Figma handoff. Includes a brand guidelines document covering misuse cases, spacing rules, and approved color combinations across light and dark contexts.</p>`,
+    details:{Software:'Illustrator, Figma', Type:'Brand Identity', Year:'2024'},
+  },
+  'editorial-layout': {
+    id:'editorial_02', title:'Editorial Layout',
+    tags:['Print','Editorial','Grid Systems','Layout'], ph:'ph-d2', gallery:['ph-d1','ph-d3','ph-d5'],
+    desc:`<p>Layout design for a print and digital publication. <em>Grid-first approach throughout</em>: a 12-column baseline grid governs all compositions, with generous margins left for marginalia and breathing room.</p><p>Typography is set in two weights of a single typeface family — restraint as a design principle. The challenge was keeping the system flexible enough for long-form articles, pull quotes, full-bleed image spreads, and data-heavy pages without breaking the visual language.</p>`,
+    details:{Software:'InDesign, Illustrator', Type:'Editorial Design', Year:'2023'},
+  },
+  'poster-series': {
+    id:'poster_03', title:'Event Poster Series',
+    tags:['Poster','Illustration','Mixed Media','Photoshop'], ph:'ph-d3', gallery:['ph-d1','ph-d2','ph-d6'],
+    desc:`<p>A series of four event posters sharing a <em>visual language while maintaining distinct individual character</em>. Each poster needed to work as part of the series and stand alone in different contexts.</p><p>The process combined analog and digital: hand-drawn elements were scanned, cleaned, and composited in Photoshop. Final type was set in Illustrator for precise control over kerning and optical alignment.</p>`,
+    details:{Software:'Photoshop, Illustrator', Type:'Print / Event', Year:'2023'},
+  },
+  'interface-motion': {
+    id:'motion_04', title:'Interface Motion',
+    tags:['Motion Design','UI','Animation','Design Systems'], ph:'ph-d4', gallery:['ph-d1','ph-d5','ph-d6'],
+    desc:`<p>Motion design system for a product UI. The work involved <em>defining timing curves, easing functions, and duration scales</em> for every interactive state in the product — not just the hero animations but the small functional moments that make an interface feel alive.</p><p>Prototyped in Figma for stakeholder review, with After Effects used for the high-fidelity handoff specs. The system reduced inconsistency across the product by giving every animator and developer a shared reference.</p>`,
+    details:{Software:'Figma, After Effects', Type:'Motion / UI', Year:'2024'},
+  },
+  'type-study': {
+    id:'type_05', title:'Type Study',
+    tags:['Typography','Experimental','Display'], ph:'ph-d5', gallery:['ph-d1','ph-d2','ph-d3'],
+    desc:`<p>An ongoing exploration of <em>display typography at extreme scales</em>. The study examines how typefaces behave when letterspacing, optical size, weight, and leading interact at headline sizes — behaviors invisible at body text sizes but structural at display.</p><p>Each composition is built as a constraint exercise: one typeface, one weight, one color. The work functions as both visual research and a reference document for making typographic decisions in client work.</p>`,
+    details:{Software:'Illustrator, Figma', Type:'Personal / Research', Year:'2023–24'},
+  },
+  'product-packaging': {
+    id:'pkg_06', title:'Product Packaging',
+    tags:['Packaging','3D Mockup','Blender','Print'], ph:'ph-d6', gallery:['ph-d1','ph-d4','ph-d5'],
+    desc:`<p>Packaging design for a boutique product line — conceived as <em>a fully integrated print and 3D project</em>. The dieline and print-ready artwork were designed in Illustrator, then the packaging was modeled in Blender to exact print dimensions for photorealistic mockup renders.</p><p>This approach eliminated the need for physical prototype photography, letting the client see the final product in multiple environments and lighting setups before committing to a print run.</p>`,
+    details:{Software:'Illustrator, Blender 4.0', Type:'Packaging / Print', Year:'2024'},
+  },
+};
+
+/* ══════════════════════════════
+   MODAL
+══════════════════════════════ */
+const overlay   = document.getElementById('modal');
+const panel     = document.getElementById('modal-panel');
+const closeBtn  = document.getElementById('modal-close-btn');
+const idEl      = document.getElementById('modal-id-el');
+const titleEl   = document.getElementById('modal-title-el');
+const heroEl    = document.getElementById('modal-hero-el');
+const tagsEl    = document.getElementById('modal-tags-el');
+const descEl    = document.getElementById('modal-desc-el');
+const detailsEl = document.getElementById('modal-details-el');
+const galleryEl = document.getElementById('modal-gallery-el');
+
+function openModal(id) {
+  const p = PROJECTS[id]; if (!p) return;
+  idEl.textContent    = p.id;
+  titleEl.textContent = p.title;
+  heroEl.className    = p.img ? 'modal-hero' : `modal-hero ${p.ph}`;
+  heroEl.innerHTML    = p.img ? `<img src="${p.img}" alt="${p.title}">` : '';
+  tagsEl.innerHTML    = p.tags.map(t => `<span class="tag">${t}</span>`).join('');
+  descEl.innerHTML    = p.desc;
+  detailsEl.innerHTML = Object.entries(p.details).map(([k,v]) =>
+    `<div class="modal-detail"><div class="modal-detail-label">${k}</div><div class="modal-detail-value">${v}</div></div>`).join('');
+  galleryEl.innerHTML = (p.galleryImgs || p.gallery).map((s,i) =>
+    p.galleryImgs ? `<div class="modal-gallery-item"><img src="${s}" alt=""></div>`
+                  : `<div class="modal-gallery-item ${s}"></div>`).join('');
+  overlay.classList.add('open');
+  document.body.classList.add('modal-open');
+  panel.scrollTop = 0;
+  closeBtn.focus();
+}
+function closeModal() {
+  overlay.classList.remove('open');
+  document.body.classList.remove('modal-open');
+}
+document.querySelectorAll('.card[data-project]').forEach(card => {
+  card.addEventListener('click', () => openModal(card.dataset.project));
+  card.addEventListener('keydown', e => { if (e.key==='Enter'||e.key===' ') openModal(card.dataset.project); });
+  card.setAttribute('tabindex', '0');
+  card.setAttribute('role', 'button');
+});
+closeBtn.addEventListener('click', closeModal);
+overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+document.addEventListener('keydown', e => { if (e.key==='Escape' && overlay.classList.contains('open')) closeModal(); });
+</script>
+
+</body>
+</html>
